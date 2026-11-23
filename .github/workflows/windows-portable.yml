@@ -105,9 +105,16 @@ jobs:
             "Pinkbin_${RELEASE_TAG#v}_portable_x64.exe" SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Pinkbin ${RELEASE_TAG#v} · Windows x64 便携版" --notes-file - <<'NOTES'
-          适用于 Windows 10/11 x64。下载便携 EXE 到有空余空间的磁盘后双击运行。应用使用 Microsoft Edge WebView2 Runtime，EXE 未做代码签名。
+          ## 第一次使用
 
-          打开右上角「AI 顾问设置」，填写服务商给出的 Base URL、API Key 和模型名。自定义 OpenAI 兼容服务可在「手动指定」中选择「OpenAI 兼容」。Key 由你在本机配置。
+          1. 在下方 **Assets** 下载文件名以 `_portable_x64.exe` 结尾的文件。保存到 D 盘等有空余空间的位置，双击运行，无需安装。
+          2. 在窗口顶部选择 `C:`，点「扫描」。扫完就能看哪些文件夹占空间，单独扫盘无需配置 AI。
+          3. 想请 AI 分析时，点右上角齿轮打开「AI 顾问设置」。填写服务商提供的 **Base URL、API Key 和模型名**，然后保存。使用 OpenAI 兼容服务时，可在「手动指定」中选择「OpenAI 兼容」。
+          4. 把不认识的大文件夹从扫描结果拖进聊天框。可以先问「这个目录是做什么的？可以挪到 D 盘吗？」看完建议后再决定如何处理。
 
-          `SHA256SUMS.txt` 包含便携 EXE 的 SHA-256 校验值。
+          [查看操作界面示例](https://github.com/obtito/pinkbin/blob/main/docs/screenshots/hero.png)
+
+          ## 系统和校验
+
+          适用于 Windows 10/11 x64，依赖 Microsoft Edge WebView2 Runtime。此 EXE 未做代码签名。`SHA256SUMS.txt` 包含便携 EXE 的 SHA-256 校验值。使用云端 AI 分析时，所选目录的路径、大小及样本路径会发给你配置的服务商。
           NOTES
