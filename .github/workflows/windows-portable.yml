@@ -1,0 +1,113 @@
+name: Windows x64 portable
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (for example v0.1.2-obtito.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-portable-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build portable executable
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Validate release tag
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') {
+            throw 'Use a version tag such as v0.1.2-obtito.1.'
+          }
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C apps/desktop tauri build --target x86_64-pc-windows-msvc --no-bundle
+
+      - name: Verify architecture and prepare release files
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $binary = Get-Item 'target/x86_64-pc-windows-msvc/release/pinkbin.exe' -ErrorAction Stop
+          $reader = [IO.BinaryReader]::new($binary.OpenRead())
+          try {
+            if ($reader.ReadUInt16() -ne 0x5A4D) {
+              throw 'The built file is not a Windows executable.'
+            }
+            $reader.BaseStream.Position = 0x3C
+            $peOffset = $reader.ReadUInt32()
+            $reader.BaseStream.Position = $peOffset
+            if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x8664) {
+              throw 'The built file is not a Windows x64 PE executable.'
+            }
+          } finally {
+            $reader.Dispose()
+          }
+
+          $output = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'pinkbin-portable')
+          $version = $env:RELEASE_TAG.Substring(1)
+          $filename = "Pinkbin_${version}_portable_x64.exe"
+          $destination = Join-Path $output.FullName $filename
+          Copy-Item -LiteralPath $binary.FullName -Destination $destination
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash.ToLowerInvariant()
+          $checksums = Join-Path $output.FullName 'SHA256SUMS.txt'
+          [IO.File]::WriteAllText($checksums, "$hash  $filename`n", [Text.Encoding]::ASCII)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinkbin-portable
+          path: ${{ runner.temp }}/pinkbin-portable
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pinkbin-portable
+          path: dist
+      - name: Verify and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        working-directory: dist
+        shell: bash
+        run: |
+          sha256sum --check --strict SHA256SUMS.txt
+          gh release create "$RELEASE_TAG" \
+            "Pinkbin_${RELEASE_TAG#v}_portable_x64.exe" SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Pinkbin ${RELEASE_TAG#v} · Windows x64 便携版" --notes-file - <<'NOTES'
+          适用于 Windows 10/11 x64。下载便携 EXE 到有空余空间的磁盘后双击运行。应用使用 Microsoft Edge WebView2 Runtime，EXE 未做代码签名。
+
+          打开右上角「AI 顾问设置」，填写服务商给出的 Base URL、API Key 和模型名。自定义 OpenAI 兼容服务可在「手动指定」中选择「OpenAI 兼容」。Key 由你在本机配置。
+
+          `SHA256SUMS.txt` 包含便携 EXE 的 SHA-256 校验值。
+          NOTES
